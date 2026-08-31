@@ -1,0 +1,74 @@
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Plus, Pencil, Trash2, Ban } from 'lucide-react';
+import { PageHeader } from '../../components/common/StatCard';
+import DataTable from '../../components/common/DataTable';
+import Badge, { StatusBadge } from '../../components/common/Badge';
+import Button from '../../components/common/Button';
+import Modal from '../../components/common/Modal';
+import { LoadingState } from '../../components/common/States';
+import productApi from '../../services/productApi';
+import { formatINR, stockStatus } from '../../utils/format';
+import useToast from '../../hooks/useToast';
+
+export default function AdminProducts() {
+  const [products, setProducts] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const navigate = useNavigate();
+  const toast = useToast();
+
+  const load = () => productApi.list().then((res) => setProducts(res.items || res));
+  useEffect(() => { load(); }, []);
+
+  if (!products) return <LoadingState label="Loading products…" />;
+
+  const confirmDelete = async () => {
+    await productApi.remove(deleteTarget.id);
+    setProducts((prev) => prev.filter((p) => p.id !== deleteTarget.id));
+    toast.success(`${deleteTarget.name} deleted`);
+    setDeleteTarget(null);
+  };
+
+  const toggleDisable = async (p) => {
+    const nextStock = p.stock > 0 ? 0 : 10;
+    await productApi.updateStock(p.id, nextStock);
+    setProducts((prev) => prev.map((x) => (x.id === p.id ? { ...x, stock: nextStock } : x)));
+    toast.success(`${p.name} ${nextStock > 0 ? 'enabled' : 'disabled'}`);
+  };
+
+  const columns = [
+    { key: 'name', label: 'Product', sortable: true, render: (r) => (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <img src={r.images?.[0]} alt="" style={{ width: 38, height: 38, borderRadius: 8, objectFit: 'cover' }} />
+        <span style={{ fontWeight: 600 }}>{r.name}</span>
+      </div>
+    ) },
+    { key: 'vendorName', label: 'Vendor', sortable: true },
+    { key: 'categoryId', label: 'Category' },
+    { key: 'price', label: 'Price', sortable: true, render: (r) => formatINR(r.price) },
+    { key: 'stock', label: 'Stock', sortable: true, render: (r) => r.stock },
+    { key: 'status', label: 'Status', render: (r) => <StatusBadge status={stockStatus(r.stock).label.toLowerCase().replace(' ', '_')} label={stockStatus(r.stock).label} /> },
+    { key: 'actions', label: 'Actions', render: (r) => (
+      <div className="row-actions">
+        <button className="icon-btn" aria-label="Edit" onClick={() => navigate(`/admin/products/${r.id}/edit`)}><Pencil size={15} /></button>
+        <button className="icon-btn" aria-label="Disable" onClick={() => toggleDisable(r)}><Ban size={15} /></button>
+        <button className="icon-btn" aria-label="Delete" onClick={() => setDeleteTarget(r)}><Trash2 size={15} color="var(--gb-red)" /></button>
+      </div>
+    ) },
+  ];
+
+  return (
+    <div>
+      <PageHeader title="Products" subtitle={`${products.length} products across all vendors`}
+        actions={<Button variant="accent" icon={Plus} onClick={() => navigate('/admin/products/new')}>Add Product</Button>} />
+      <div className="card" style={{ padding: 18 }}>
+        <DataTable columns={columns} rows={products} searchKeys={['name', 'vendorName']} emptyTitle="No products found" />
+      </div>
+
+      <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Delete Product"
+        footer={<><Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button><Button variant="danger" onClick={confirmDelete}>Delete</Button></>}>
+        <p style={{ fontSize: 14, color: 'var(--gb-ink-600)' }}>Are you sure you want to delete <strong>{deleteTarget?.name}</strong>? This action cannot be undone.</p>
+      </Modal>
+    </div>
+  );
+}
